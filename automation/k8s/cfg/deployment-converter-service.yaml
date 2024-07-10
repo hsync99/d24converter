@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: converter-service
+  namespace: agr-24-stage
+  labels:
+    app: converter-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: converter-service
+  template:
+    metadata:
+      labels:
+        app: converter-service
+    spec:
+      imagePullSecrets:
+        - name: agr-24-registry
+      nodeSelector:
+        node-type: black-worker
+      containers:
+        - name: converter-service
+          imagePullPolicy: Always
+          image: artifactory.dogovor24.dev/docker-local/converter-service:latest
+          ports:
+            - containerPort: 6789
+          envFrom:
+            - configMapRef:
+                name: converter-service-config
+          readinessProbe:
+            tcpSocket:
+              port: 6789
+            initialDelaySeconds: 5
+            periodSeconds: 10

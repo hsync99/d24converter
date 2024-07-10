@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: converter-service-config
+  namespace: agr-24-stage
+data:
+  SERVER_PORT: "6789"
+  PAYLOAD_MAX_SIZE: "20971520"
+  PAYLOAD_TIMEOUT: "false"
+  TIMEOUT_SOCKET: "120000"

@@ -1,0 +1,112 @@
+image: atlassian/default-image:2
+
+options:
+  docker: true
+
+definitions:
+  services:
+    docker:
+      memory: 2048
+  steps:
+    - step: &Build-container
+        name: Build container
+        script:
+          - docker login -u pipeline -p hfrYHbfjr832B artifactory.dogovor24.dev
+          - docker build --build-arg BITBUCKET_COMMIT=${BITBUCKET_COMMIT} --build-arg BITBUCKET_BRANCH=${BITBUCKET_BRANCH} -t artifactory.dogovor24.dev/docker-local/converter-service:${BITBUCKET_BUILD_NUMBER} .
+          - docker tag artifactory.dogovor24.dev/docker-local/converter-service:${BITBUCKET_BUILD_NUMBER} artifactory.dogovor24.dev/docker-local/converter-service:latest
+          - pipe: docker://egorkozz/artifactory-docker:0.2.12
+            variables:
+              # move to project properties
+              ARTIFACTORY_URL: https://artifactory.dogovor24.dev/artifactory
+              # move to project properties
+              ARTIFACTORY_USER: pipeline
+              # move to project properties
+              ARTIFACTORY_PASSWORD: hfrYHbfjr832B
+              DOCKER_IMAGE_TAG: "artifactory.dogovor24.dev/docker-local/converter-service:${BITBUCKET_BUILD_NUMBER}"
+              DOCKER_TARGET_REPO: "docker-local"
+              BUILD_NAME: "converter-service"
+              EXTRA_ARGS: "--url https://artifactory.dogovor24.dev/artifactory --user pipeline --password hfrYHbfjr832B --apikey AKCp5fTuByRjjshdj5mAwvsPSQaJfmjmF7GCVCGMR8FiCgXbDKAEDpv6Dsmwh9MJEnkaz2iiu"
+              JFROG_CLI_LOG_LEVEL: "DEBUG"
+          - pipe: docker://egorkozz/artifactory-docker:0.2.12
+            variables:
+              # move to project properties
+              ARTIFACTORY_URL: https://artifactory.dogovor24.dev/artifactory
+              # move to project properties
+              ARTIFACTORY_USER: pipeline
+              # move to project properties
+              ARTIFACTORY_PASSWORD: hfrYHbfjr832B
+              DOCKER_IMAGE_TAG: "artifactory.dogovor24.dev/docker-local/converter-service:latest"
+              DOCKER_TARGET_REPO: "docker-local"
+              BUILD_NAME: "converter-service"
+              EXTRA_ARGS: "--url https://artifactory.dogovor24.dev/artifactory --user pipeline --password hfrYHbfjr832B --apikey AKCp5fTuByRjjshdj5mAwvsPSQaJfmjmF7GCVCGMR8FiCgXbDKAEDpv6Dsmwh9MJEnkaz2iiu"
+              JFROG_CLI_LOG_LEVEL: "DEBUG"
+
+    - step: &Deploy
+        name: Deploy
+        deployment: test
+        trigger: automatic
+        script:
+          # Rename the config folder to prevent naming collisions.
+          - mv config config_
+          - KUBE_CONFIG=`cat automation/k8s/admin.conf | base64 --wrap=0`
+          - export KUBE_CONFIG
+          - echo $KUBE_CONFIG
+          - pipe: atlassian/kubectl-run:1.1.6
+            variables:
+              KUBE_CONFIG: ${KUBE_CONFIG}
+              KUBECTL_COMMAND: "apply"
+              RESOURCE_PATH: "automation/k8s/cfg/"
+          - pipe: atlassian/kubectl-run:1.1.6
+            variables:
+              KUBE_CONFIG: ${KUBE_CONFIG}
+              KUBECTL_COMMAND: "-n agr-24-stage rollout restart deployment/converter-service"
+    - step: &DEPLOY_NEWPROD
+        name: Deploy to newprod
+        # Valid values are: test, staging, or production
+        deployment: newproduction
+        # Valid values are: manual or automatic
+        trigger: manual
+        script:
+          # Rename the config folder to prevent naming collisions.
+          - mv config config_
+          - KUBE_CONFIG=`cat automation/k8s-newprod/admin.conf | base64 --wrap=0`
+          - export KUBE_CONFIG
+          - echo $KUBE_CONFIG
+          - pipe: atlassian/kubectl-run:1.1.6
+            variables:
+              KUBE_CONFIG: ${KUBE_CONFIG}
+              KUBECTL_COMMAND: "apply"
+              RESOURCE_PATH: "automation/k8s-newprod/cfg/"
+          - pipe: atlassian/kubectl-run:1.1.6
+            variables:
+              KUBE_CONFIG: ${KUBE_CONFIG}
+              KUBECTL_COMMAND: "-n cool-prod rollout restart deployment/converter-service"
+    - step: &Build-prod
+        name: Build container for prod
+        script:
+          - docker login -u pipeline -p hfrYHbfjr832B artifactory.dogovor24.dev
+          - docker build --build-arg BITBUCKET_COMMIT=${BITBUCKET_COMMIT} --build-arg BITBUCKET_BRANCH=${BITBUCKET_BRANCH} -t artifactory.dogovor24.dev/docker-local/converter-service:${BITBUCKET_BRANCH}-latest .
+          - pipe: docker://egorkozz/artifactory-docker:0.2.12
+            variables:
+              # move to project properties
+              ARTIFACTORY_URL: https://artifactory.dogovor24.dev/artifactory
+              # move to project properties
+              ARTIFACTORY_USER: pipeline
+              # move to project properties
+              ARTIFACTORY_PASSWORD: hfrYHbfjr832B
+              DOCKER_IMAGE_TAG: "artifactory.dogovor24.dev/docker-local/converter-service:${BITBUCKET_BRANCH}-latest"
+              DOCKER_TARGET_REPO: "docker-local"
+              BUILD_NAME: "converter-service"
+              EXTRA_ARGS: "--url https://artifactory.dogovor24.dev/artifactory --user pipeline --password hfrYHbfjr832B --apikey AKCp5fTuByRjjshdj5mAwvsPSQaJfmjmF7GCVCGMR8FiCgXbDKAEDpv6Dsmwh9MJEnkaz2iiu"
+              JFROG_CLI_LOG_LEVEL: "DEBUG"
+
+pipelines:
+  branches:
+    '{develop,devops}':
+      - step: *Build-container
+      - step: *Deploy
+    'master':
+      - step: *Build-container
+      - step: *Deploy
+      - step: *Build-prod
+      - step: *DEPLOY_NEWPROD
